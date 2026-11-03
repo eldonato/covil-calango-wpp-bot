@@ -77,14 +77,17 @@ export const isMessageReply = (msg) => {
  * @param {object} sock - Instância atual do socket Baileys
  */
 export const sendReminderToAllFromGroup = async (jid, sock) => {
-  const metadata = await sock.groupMetadata(jid);
-  const mentionedJid = metadata.participants.map(p => p.id);
-
-  await sendAndTrack(sock, jid, {
+  const content = {
     image: fs.readFileSync("./src/images/covil-calango-post.png"),
     caption: getReminderMessage(),
-    contextInfo: { mentionedJid }
-  });
+  };
+
+  if (process.env.MENTION_ALL_ON_REMINDER?.toLowerCase() === "true") {
+    const metadata = await sock.groupMetadata(jid);
+    content.contextInfo = { mentionedJid: metadata.participants.map((participant) => participant.id) };
+  }
+
+  await sendAndTrack(sock, jid, content);
 }
 
 /**

@@ -7,7 +7,8 @@ import { isMessageReply, isMessageValid, replyToSender } from "./wp-bot.utils.js
 
 dotenv.config();
 
-const groupTargets = (process.env.WHATSAPP_GROUPS).split(",").map((target) => target.trim()).filter(Boolean);
+const groupTargets = (process.env.WHATSAPP_GROUPS || "").split(",").map((target) => target.trim()).filter(Boolean);
+const aiResponsesEnabled = process.env.ENABLE_AI_RESPONSES?.toLowerCase() === "true";
 const reconnectDelayMs = 5000;
 
 const onConnectionUpdate = (update) => {
@@ -22,6 +23,11 @@ const onConnectionUpdate = (update) => {
 };
 
 export const getBotGroupJids = async (sock) => {
+  if (groupTargets.length === 0) {
+    const groups = Object.values(await sock.groupFetchAllParticipating());
+    return [...new Set(groups.map((group) => group.id))];
+  }
+
   const groupJids = groupTargets.filter((target) => target.endsWith("@g.us"));
   const groupNames = groupTargets.filter((target) => !target.endsWith("@g.us"));
 
@@ -52,13 +58,9 @@ const onMessageUpsert = async (msgUpdate, sock, getGroupJids) => {
     return;
   }
 
-  // Só aciona a IA quando a mensagem responde a uma mensagem enviada pelo bot.
-  // DESABILITADO, NÃO É NECESSÁRIO RESPONDER AS MENSAGENS POR ENQUANTO.
-  // if (isMessageReply(msg, sock)) {
-  //   await replyToSender(msg, sock);
-  //   return;
-  // }
-
+  if (aiResponsesEnabled && isMessageReply(msg)) {
+    await replyToSender(msg, sock);
+  }
 };
 
 export const startBot = async (onConnected) => {

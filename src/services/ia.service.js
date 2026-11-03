@@ -16,9 +16,9 @@ const clientIAConfig = {
 
 export async function generateByPrompt(prompt) {
   try {
-    const apiKey = process.env.API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      throw new Error("Configure API_KEY para habilitar as respostas da IA.");
+      throw new Error("Configure OPENROUTER_API_KEY para habilitar as respostas da IA.");
     }
 
     const knowledge = await readFile(fileURLToPath(new URL("../../INFO.md", import.meta.url)), "utf8");
