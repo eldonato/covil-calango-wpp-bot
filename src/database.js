@@ -42,7 +42,7 @@ const normalizeSettings = (rows) => {
   };
 
   return {
-    whatsappGroups: getValue(settingNames.whatsappGroups),
+    whatsappGroups: parameters.get(settingNames.whatsappGroups) ?? "",
     scheduleJobPeriodicity: getValue(settingNames.scheduleJobPeriodicity),
     openrouterApiKey: getValue(settingNames.openrouterApiKey),
     enableAiResponses: readBoolean(

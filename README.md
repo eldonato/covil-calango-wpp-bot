@@ -26,11 +26,11 @@ Para executar diretamente com `npm start`, configure `PGHOST`, `PGDATABASE`, `PG
 
 ## Parâmetros do bot
 
-Cadastre todos os parâmetros abaixo em `tb_parametro`, usando `nome` e `descricao`. Eles são obrigatórios; se algum estiver ausente ou uma flag não for `true`/`false`, o bot não inicia.
+Cadastre os parâmetros em `tb_parametro`, usando `nome` e `descricao`. Todos são obrigatórios, exceto `WPP_BOT_WHATSAPP_GROUPS`; se outro parâmetro estiver ausente ou uma flag não for `true`/`false`, o bot não inicia. Quando `WPP_BOT_WHATSAPP_GROUPS` estiver ausente ou vazio, o bot usa todos os grupos da conta.
 
 | `nome` | Uso | Exemplo de `descricao` |
 |---|---|---|
-| `WPP_BOT_WHATSAPP_GROUPS` | Grupos separados por vírgula: nomes ou JIDs. Vazio seleciona todos os grupos da conta. | `120363000000000000@g.us` |
+| `WPP_BOT_WHATSAPP_GROUPS` (opcional) | Grupos separados por vírgula: nomes ou JIDs. Se ausente ou vazio, seleciona todos os grupos da conta. | `120363411812937621@g.us` |
 | `WPP_BOT_SCHEDULE_JOB_PERIODICITY` | Expressão cron para envio de lembretes. | `0 9 * * *` |
 | `WPP_BOT_OPENROUTER_API_KEY` | Chave para respostas da IA. | Chave fornecida pelo OpenRouter |
 | `WPP_BOT_ENABLE_AI_RESPONSES` | Habilita respostas da IA no privado e quando alguém cita uma mensagem do bot em grupo. | `true` ou `false` |
