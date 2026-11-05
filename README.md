@@ -1,48 +1,81 @@
-# Projeto WPP Bot
+# WPP Bot
 
-Bot para responder mensagens em grupos do WhatsApp e enviar lembretes periódicos.
+Bot de WhatsApp para responder mensagens privadas e mensagens citadas em grupos, além de enviar lembretes periódicos.
 
 ## Requisitos
 
-- Node.js 20.19.0 ou superior.
-- Uma sessão autenticada do WhatsApp. Na primeira execução, o QR code será exibido no terminal.
+- Node.js 20.19.0 ou superior para execução local, ou Docker Compose.
+- Um PostgreSQL existente com a tabela `tb_parametro` e as configurações descritas abaixo.
+- Uma sessão autenticada do WhatsApp. Na primeira execução, o QR code aparece nos logs.
 
-## Configuração
+O bot não cria banco nem tabelas. A tabela deve ter as colunas `id`, `nome` e `descricao` e conter os parâmetros obrigatórios com os nomes indicados. O bot consulta somente linhas cujo `nome` começa com `WPP_BOT_`.
 
-Crie um arquivo `.env` na raiz do projeto:
+## Configuração da conexão PostgreSQL
 
-```env
-# Opcional: nomes ou JIDs separados por vírgula. Sem valor, usa todos os grupos da conta.
-# WHATSAPP_GROUPS=Grupo Teste Bot,Outro Grupo
-# Também pode usar JIDs de grupos, por exemplo 120363000000000000@g.us.
-SCHEDULE_JOB_PERIODICITY=0 9 * * *
-SESSION_PATH=./auth_info
-OPENROUTER_API_KEY=
-ENABLE_AI_RESPONSES=false
-MENTION_ALL_ON_REMINDER=false
+O arquivo `.env` é reservado para conexão com o banco e configurações de execução — não coloque nele as configurações funcionais do bot.
+
+No Docker Compose, o container do bot precisa compartilhar uma rede Docker com o PostgreSQL. Neste ambiente, configure:
+
+- `POSTGRES_DB`, `POSTGRES_USER` e `POSTGRES_PASSWORD`: banco e credenciais existentes; o Compose os repassa à aplicação.
+- `PGHOST=covil-calango-api-db-1` e `PGPORT=5432`: nome do container PostgreSQL e sua porta interna. O serviço `bot` conecta-se à rede Docker externa `covil-calango-api_default`; ela deve existir na VPS antes de subir o bot. `localhost` dentro do container aponta para o próprio container.
+- `PGSSL=true` quando o servidor exigir SSL.
+
+Também é possível fornecer `DATABASE_URL` no formato `postgresql://` ou `postgres://`, que substitui as variáveis de conexão separadas.
+
+Para executar diretamente com `npm start`, configure `PGHOST`, `PGDATABASE`, `PGUSER` e `PGPASSWORD`; `PGPORT` é opcional e assume `5433`. `DATABASE_URL` também pode ser usado. Nesse caso, use o endereço do PostgreSQL acessível a partir da máquina onde o processo Node.js roda.
+
+## Parâmetros do bot
+
+Cadastre todos os parâmetros abaixo em `tb_parametro`, usando `nome` e `descricao`. Eles são obrigatórios; se algum estiver ausente ou uma flag não for `true`/`false`, o bot não inicia.
+
+| `nome` | Uso | Exemplo de `descricao` |
+|---|---|---|
+| `WPP_BOT_WHATSAPP_GROUPS` | Grupos separados por vírgula: nomes ou JIDs. Vazio seleciona todos os grupos da conta. | `120363000000000000@g.us` |
+| `WPP_BOT_SCHEDULE_JOB_PERIODICITY` | Expressão cron para envio de lembretes. | `0 9 * * *` |
+| `WPP_BOT_OPENROUTER_API_KEY` | Chave para respostas da IA. | Chave fornecida pelo OpenRouter |
+| `WPP_BOT_ENABLE_AI_RESPONSES` | Habilita respostas da IA no privado e quando alguém cita uma mensagem do bot em grupo. | `true` ou `false` |
+| `WPP_BOT_MENTION_ALL_ON_REMINDER` | Marca os participantes ao enviar lembretes. | `true` ou `false` |
+| `WPP_BOT_MESSAGE_REMINDER_DEFAULT` | Texto da legenda do lembrete. | Texto desejado |
+
+O lembrete inclui a imagem `src/images/covil-calango-post.png`. A expressão `* * * * *` agenda o envio a cada minuto. O container usa o fuso `America/Sao_Paulo`.
+
+As alterações feitas no banco são recarregadas a cada 30 segundos. Se uma consulta ou validação falhar durante a recarga, o bot registra o erro e mantém as configurações carregadas anteriormente.
+
+Com `WPP_BOT_ENABLE_AI_RESPONSES=true`, o bot responde às mensagens privadas válidas e, em grupos configurados, somente às mensagens que citam uma mensagem enviada por ele. Com a opção desativada, não responde com IA em nenhum dos casos.
+
+Para conferir os parâmetros cadastrados:
+
+```sql
+SELECT id, nome, descricao
+FROM tb_parametro
+WHERE LEFT(nome, 8) = 'WPP_BOT_'
+ORDER BY id;
 ```
 
-Instale as dependências e inicie o bot:
+Para alterar um valor, atualize `descricao` da linha correspondente a `nome`. Por exemplo, para mudar o agendamento:
+
+```sql
+UPDATE tb_parametro
+SET descricao = '* * * * *'
+WHERE nome = 'WPP_BOT_SCHEDULE_JOB_PERIODICITY';
+```
+
+Guarde a chave OpenRouter como segredo e restrinja o acesso às configurações no banco. Não exponha o PostgreSQL à internet nem use credenciais administrativas em aplicações que só precisam atualizar `tb_parametro`.
+
+## Executar com Docker Compose
+
+```sh
+docker compose up -d --build
+docker compose logs -f bot
+```
+
+Na primeira execução, leia o QR code nos logs para autenticar o WhatsApp. Não compartilhe os logs enquanto o QR code estiver visível. O volume `whatsapp-auth` preserva a sessão entre reinícios. Para atualizar o bot, execute novamente `docker compose up -d --build`.
+
+## Executar localmente
 
 ```sh
 npm ci
 npm start
 ```
 
-`WHATSAPP_GROUPS` é opcional. Se omitida ou vazia, o bot obtém os JIDs de todos os grupos dos quais a conta participa; se preenchida, aceita nomes ou JIDs separados por vírgulas para selecionar os grupos. O bot precisa fazer parte de cada grupo. Ele escuta mensagens e envia um lembrete diário para todos os grupos selecionados. `SCHEDULE_JOB_PERIODICITY` usa uma expressão cron e, por padrão, `0 9 * * *` agenda a postagem para as 9h, de acordo com o fuso horário local do processo. A sessão é mantida em `SESSION_PATH`: guarde esse diretório entre reinícios e não compartilhe nem versione os arquivos de autenticação.
-
-`ENABLE_AI_RESPONSES` controla as respostas da IA e é `false` por padrão. Para habilitá-las, defina como `true` e informe `OPENROUTER_API_KEY`; mesmo habilitada, a IA só responde mensagens que citam uma mensagem enviada pelo bot. `MENTION_ALL_ON_REMINDER` controla se o lembrete marca todos os participantes do grupo e também é `false` por padrão. Os valores são reconhecidos sem diferenciar maiúsculas de minúsculas.
-
-As mensagens enviadas pelo bot ficam centralizadas em `src/messages.js`, incluindo respostas padrão e textos dos lembretes.
-
-O conteúdo de `conhecimento.md`, na raiz do projeto, é enviado como contexto em cada pergunta à IA. Edite esse arquivo para atualizar as informações de referência usadas nas respostas.
-
-## Docker
-
-No servidor, instale o Docker e copie o projeto (sem compartilhar o arquivo `.env`). Crie o `.env` com as variáveis necessárias e inicie o bot com Docker Compose:
-
-```sh
-docker compose up -d --build
-```
-
-O arquivo `compose.yaml` configura reinício automático e um volume persistente para a sessão do WhatsApp. O bot não precisa publicar nenhuma porta: ele mantém a conexão de saída com o WhatsApp. Na primeira execução, acompanhe `docker compose logs -f` e leia o QR code para autenticar. Não compartilhe esses logs enquanto o QR estiver visível. Para atualizar o bot após enviar as mudanças ao servidor, execute novamente `docker compose up -d --build`. O `.dockerignore` impede que `.env` e arquivos de autenticação sejam incluídos na imagem.
+O conteúdo de `INFO.md` é enviado como contexto às solicitações da IA; edite esse arquivo para atualizar as informações de referência.

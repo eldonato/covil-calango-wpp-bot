@@ -1,10 +1,8 @@
-import dotenv from "dotenv";
 import { messages } from "../messages.js";
 import { OpenRouter } from "@openrouter/sdk";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-
-dotenv.config();
+import { getSettings } from "../settings.js";
 
 const clientIAConfig = {
   model: "recursive/flint-v1.0:free",
@@ -16,9 +14,9 @@ const clientIAConfig = {
 
 export async function generateByPrompt(prompt) {
   try {
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey = getSettings().openrouterApiKey;
     if (!apiKey) {
-      throw new Error("Configure OPENROUTER_API_KEY para habilitar as respostas da IA.");
+      throw new Error("Configure WPP_BOT_OPENROUTER_API_KEY para habilitar as respostas da IA.");
     }
 
     const knowledge = await readFile(fileURLToPath(new URL("../../INFO.md", import.meta.url)), "utf8");
@@ -42,9 +40,9 @@ export async function generateByPrompt(prompt) {
       }
     });
 
-    return completion.choices[0]?.message?.content || messages.replies.unrecognized;
+    return completion.choices[0]?.message?.content || messages.replies.genericErrorReply;
   } catch (err) {
     console.error("Erro ao gerar resposta da IA:", err);
-    return messages.replies.aiError;
+    return messages.replies.genericErrorReply;
   }
 }

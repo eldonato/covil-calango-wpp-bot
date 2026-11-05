@@ -7,8 +7,22 @@ services:
       - .env
     environment:
       SESSION_PATH: /app/auth_info
+      DATABASE_URL: ${DATABASE_URL}
+      PGHOST: ${PGHOST}
+      PGPORT: ${PGPORT}
+      PGDATABASE: ${PGDATABASE}
+      PGUSER: ${PGUSER}
+      PGPASSWORD: ${PGPASSWORD}
+      PGSSL: ${PGSSL}
     volumes:
       - whatsapp-auth:/app/auth_info
+    networks:
+      - postgres-network
 
 volumes:
   whatsapp-auth:
+
+networks:
+  postgres-network:
+    external: true
+    name: covil-calango-api_default

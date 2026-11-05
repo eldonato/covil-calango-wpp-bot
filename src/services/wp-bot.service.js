@@ -1,15 +1,14 @@
 import makeWASocket, { useMultiFileAuthState, fetchLatestBaileysVersion } from "@whiskeysockets/baileys";
 import qrcode from "qrcode-terminal";
 import pino from "pino";
-import dotenv from "dotenv";
 
 import { isMessageReply, isMessageValid, replyToSender } from "./wp-bot.utils.js";
+import { getSettings } from "../settings.js";
 
-dotenv.config();
-
-const groupTargets = (process.env.WHATSAPP_GROUPS || "").split(",").map((target) => target.trim()).filter(Boolean);
-const aiResponsesEnabled = process.env.ENABLE_AI_RESPONSES?.toLowerCase() === "true";
 const reconnectDelayMs = 5000;
+let clearGroupCache = () => {};
+
+export const invalidateGroupCache = () => clearGroupCache();
 
 const onConnectionUpdate = (update) => {
   const { qr } = update;
@@ -23,6 +22,7 @@ const onConnectionUpdate = (update) => {
 };
 
 export const getBotGroupJids = async (sock) => {
+  const groupTargets = getSettings().whatsappGroups.split(",").map((target) => target.trim()).filter(Boolean);
   if (groupTargets.length === 0) {
     const groups = Object.values(await sock.groupFetchAllParticipating());
     return [...new Set(groups.map((group) => group.id))];
@@ -38,7 +38,7 @@ export const getBotGroupJids = async (sock) => {
       if (group) {
         groupJids.push(group.id);
       } else {
-        console.error(`Não encontrei o grupo "${groupName}". Verifique WHATSAPP_GROUPS.`);
+        console.error(`Não encontrei o grupo "${groupName}". Verifique WPP_BOT_WHATSAPP_GROUPS.`);
       }
     }
   }
@@ -52,13 +52,20 @@ const onMessageUpsert = async (msgUpdate, sock, getGroupJids) => {
     return;
   }
 
-  const groupJids = await getGroupJids();
   const jid = msg.key.remoteJid;
+  const isPrivateMessage = jid.endsWith("@s.whatsapp.net") || jid.endsWith("@lid");
+
+  if (isPrivateMessage) {
+    await replyToSender(msg, sock);
+    return;
+  }
+
+  const groupJids = await getGroupJids();
   if (!groupJids.includes(jid)) {
     return;
   }
 
-  if (aiResponsesEnabled && isMessageReply(msg)) {
+  if (getSettings().enableAiResponses && isMessageReply(msg)) {
     await replyToSender(msg, sock);
   }
 };
@@ -76,6 +83,9 @@ export const startBot = async (onConnected) => {
       });
       let groupLookup;
       const getGroupJids = () => groupLookup ??= getBotGroupJids(sock);
+      clearGroupCache = () => {
+        groupLookup = undefined;
+      };
 
       sock.ev.on("creds.update", saveCreds);
       sock.ev.on("messages.upsert", (update) => {

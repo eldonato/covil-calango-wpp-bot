@@ -1,8 +1,18 @@
 import fs from "fs";
+import { normalizeMessageContent } from "@whiskeysockets/baileys";
 import { generateByPrompt } from "./ia.service.js";
 import { getReminderMessage, messages } from "../messages.js";
+import { getSettings } from "../settings.js";
 
 const sentMessages = new Set();
+
+const getMessageText = (msg) => {
+  const content = normalizeMessageContent(msg?.message);
+  return content?.conversation
+    || content?.extendedTextMessage?.text
+    || content?.imageMessage?.caption
+    || "";
+};
 
 /**
  * Obtém o JID do grupo de acordo com o nome informado, caso não exista, retorna null
@@ -24,9 +34,9 @@ export const getJIDByName = async (nome, sock) => {
  * @param {object} sock - Instância atual do socket Baileys
  */
 export const replyToSender = async (msg, sock) => {
-  const text = msg.message.conversation || msg.message.extendedTextMessage?.text || "";
+  const text = getMessageText(msg);
   await sendAndTrack(sock, msg.key.remoteJid, {
-    text: text ? await generateByPrompt(text) : messages.replies.empty,
+    text: text ? await generateByPrompt(text) : messages.replies.genericErrorReply,
     contextInfo: {
       stanzaId: msg.key.id,
       participant: msg.key.participant || msg.key.remoteJid,
@@ -46,10 +56,7 @@ export const replyToSender = async (msg, sock) => {
  */
 export const isMessageValid = (msgUpdate, from, sock) => {
   const msg = msgUpdate.messages?.[0];
-  const messageExists = () => {
-    return msg?.message && (msg.message.conversation || msg.message.extendedTextMessage?.text || msg.message.imageMessage?.caption) || "";
-  }
-  if (messageExists() && msgUpdate.type === "notify") {
+  if (getMessageText(msg) && msgUpdate.type === "notify") {
     const fromMe = msg.key.fromMe || msg.participant === sock.user?.id || from === sock.user?.id;
     return !fromMe && !from.endsWith("@broadcast") && !from.includes("status");
   }
@@ -82,7 +89,7 @@ export const sendReminderToAllFromGroup = async (jid, sock) => {
     caption: getReminderMessage(),
   };
 
-  if (process.env.MENTION_ALL_ON_REMINDER?.toLowerCase() === "true") {
+  if (getSettings().mentionAllOnReminder) {
     const metadata = await sock.groupMetadata(jid);
     content.contextInfo = { mentionedJid: metadata.participants.map((participant) => participant.id) };
   }

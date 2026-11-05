@@ -1,13 +1,21 @@
+import dotenv from "dotenv";
 import schedule from "node-schedule";
-import { startBot, getBotGroupJids } from "./services/wp-bot.service.js";
+import { startBot, getBotGroupJids, invalidateGroupCache } from "./services/wp-bot.service.js";
 import { sendReminderToAllFromGroup } from "./services/wp-bot.utils.js";
 import { messages } from "./messages.js";
+import { createPool, loadSettings } from "./database.js";
+import { getSettings, setSettings } from "./settings.js";
 
-process.on("uncaughtException", (err) => console.error(messages.logs.uncaughtException, err));
-process.on("unhandledRejection", (reason, promise) => console.error(messages.logs.unhandledRejection, reason));
+dotenv.config();
 
-const reminderSchedule = process.env.SCHEDULE_JOB_PERIODICITY || "0 9 * * *";
-const reminderJob = schedule.scheduleJob(reminderSchedule, async () => {
+process.on("uncaughtException", (error) => console.error(messages.logs.uncaughtException, error));
+process.on("unhandledRejection", (reason) => console.error(messages.logs.unhandledRejection, reason));
+
+let sock;
+let reminderJob;
+let settingsReloadTimer;
+
+const sendReminders = async () => {
   if (!sock) {
     console.error(messages.logs.reminderDisconnected);
     return;
@@ -27,20 +35,77 @@ const reminderJob = schedule.scheduleJob(reminderSchedule, async () => {
         console.error(messages.logs.reminderGroupError(jid), error);
       }
     }
-  } catch (err) {
-    console.error(messages.logs.taskError, err);
+  } catch (error) {
+    console.error(messages.logs.taskError, error);
   }
-});
+};
 
-if (!reminderJob) {
-  throw new Error(`Agendamento inválido em SCHEDULE_JOB_PERIODICITY: "${reminderSchedule}"`);
-}
+const validateSchedule = (expression) => {
+  const probe = schedule.scheduleJob(expression, () => {});
+  if (!probe) {
+    throw new Error(`Agendamento inválido: "${expression}"`);
+  }
+  probe.cancel();
+};
 
-let sock;
-startBot((connectedSocket) => {
-  sock = connectedSocket;
-}).catch((error) => {
-  console.error(messages.logs.botStopped, error);
-  reminderJob.cancel();
+const applySchedule = (expression) => {
+  const nextJob = schedule.scheduleJob(expression, sendReminders);
+  if (!nextJob) {
+    throw new Error(`Agendamento inválido: "${expression}"`);
+  }
+  reminderJob?.cancel();
+  reminderJob = nextJob;
+};
+
+const reloadSettings = async (pool) => {
+  try {
+    const nextSettings = await loadSettings(pool);
+    const currentSettings = getSettings();
+
+    if (nextSettings.scheduleJobPeriodicity !== currentSettings.scheduleJobPeriodicity) {
+      validateSchedule(nextSettings.scheduleJobPeriodicity);
+      applySchedule(nextSettings.scheduleJobPeriodicity);
+    }
+
+    if (nextSettings.whatsappGroups !== currentSettings.whatsappGroups) {
+      invalidateGroupCache();
+    }
+
+    setSettings(nextSettings);
+  } catch (error) {
+    console.error("Não foi possível recarregar as configurações do PostgreSQL:", error);
+  }
+};
+
+const start = async () => {
+  const pool = createPool();
+  try {
+    await pool.query("SELECT 1");
+    setSettings(await loadSettings(pool));
+    validateSchedule(getSettings().scheduleJobPeriodicity);
+    applySchedule(getSettings().scheduleJobPeriodicity);
+  } catch (error) {
+    console.error("Falha ao iniciar o banco de dados:", error);
+    reminderJob?.cancel();
+    await pool.end();
+    process.exitCode = 1;
+    return;
+  }
+
+  settingsReloadTimer = setInterval(() => reloadSettings(pool), 30000);
+
+  startBot((connectedSocket) => {
+    sock = connectedSocket;
+  }).catch(async (error) => {
+    console.error(messages.logs.botStopped, error);
+    reminderJob?.cancel();
+    clearInterval(settingsReloadTimer);
+    await pool.end();
+    process.exitCode = 1;
+  });
+};
+
+start().catch((error) => {
+  console.error("Falha ao iniciar o bot:", error);
   process.exitCode = 1;
 });
